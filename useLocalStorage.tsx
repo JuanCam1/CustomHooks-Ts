@@ -1,43 +1,46 @@
-export { useState } from 'react';
+import { useEffect, useState } from "react";
 
-const useLocalStorage = (key: string, initialValue) =>{
-  // State to store our value
-  // Pass initial state function to useState so logic is only executed once
-  const [storedValue, setStoredValue] = useState(() => {
-    if (typeof window === "undefined") {
-      return initialValue;
+export default function useLocalStorage<T>(
+  key: string,
+  defaultValue: T,
+): [T, (value: T) => void] {
+  const [value, setValue] = useState(defaultValue);
+
+  useEffect(() => {
+    const item = localStorage.getItem(key);
+
+    if (!item) {
+      localStorage.setItem(key, JSON.stringify(defaultValue));
     }
 
-    try {
-      // Get from local storage by key
-      const item = window.localStorage.getItem(key);
-      // Parse stored json or if none return initialValue
-      return item ? JSON.parse(item) : initialValue;
-    } catch (error) {
-      // If error also return initialValue
-      console.log(error);
-      return initialValue;
-    }
-  });
+    setValue(item ? JSON.parse(item) : defaultValue);
 
-  // Return a wrapped version of useState's setter function that ...
-  // ... persists the new value to localStorage.
-  const setValue = (value) => {
+    function handler(e: StorageEvent) {
+      if (e.key !== key) return;
+
+      const lsi = localStorage.getItem(key);
+      setValue(JSON.parse(lsi ?? ""));
+    }
+
+    window.addEventListener("storage", handler);
+
+    return () => {
+      window.removeEventListener("storage", handler);
+    };
+  }, [defaultValue, key]);
+
+  const setValueWrap = (value: T) => {
     try {
-      // Allow value to be a function so we have same API as useState
-      const valueToStore =
-        value instanceof Function ? value(storedValue) : value;
-      // Save state
-      setStoredValue(valueToStore);
-      // Save to local storage
+      setValue(value);
+
+      localStorage.setItem(key, JSON.stringify(value));
       if (typeof window !== "undefined") {
-        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        window.dispatchEvent(new StorageEvent("storage", { key }));
       }
-    } catch (error) {
-      // A more advanced implementation would handle the error case
-      console.log(error);
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  return [storedValue, setValue];
+  return [value, setValueWrap];
 }
